@@ -17,6 +17,7 @@ class Exp_Classification(Exp_Basic):
     def __init__(self, args):
         super(Exp_Classification, self).__init__(args)
 
+    # 加载模型
     def _build_model(self):
         # model input depends on data
         train_data, train_loader = self._get_data(flag='TRAIN')
@@ -28,18 +29,22 @@ class Exp_Classification(Exp_Basic):
         # model init
         model = self.model_dict[self.args.model].Model(self.args).float()
         if self.args.use_multi_gpu and self.args.use_gpu:
+            # TODO: DP -> DDP
             model = nn.DataParallel(model, device_ids=self.args.device_ids)
         return model
 
+    # 获取数据集
     def _get_data(self, flag):
         data_set, data_loader = data_provider(self.args, flag)
         return data_set, data_loader
 
+    # TODO: 默认优化器是RAdam，后续可以更换优化器
     def _select_optimizer(self):
         # model_optim = optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
         model_optim = optim.RAdam(self.model.parameters(), lr=self.args.learning_rate)
         return model_optim
 
+    # TODO: Default loss
     def _select_criterion(self):
         criterion = nn.CrossEntropyLoss()
         return criterion
@@ -124,7 +129,7 @@ class Exp_Classification(Exp_Basic):
                 nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=4.0)
                 model_optim.step()
 
-            print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
+            print("Epoch: {:03d} cost time: {:.4f}".format(epoch + 1, time.time() - epoch_time))
             train_loss = np.average(train_loss)
             vali_loss, val_accuracy = self.vali(vali_data, vali_loader, criterion)
             test_loss, test_accuracy = self.vali(test_data, test_loader, criterion)
@@ -181,8 +186,8 @@ class Exp_Classification(Exp_Basic):
             os.makedirs(folder_path)
 
         print('accuracy:{}'.format(accuracy))
-        file_name='result_classification.txt'
-        f = open(os.path.join(folder_path,file_name), 'a')
+        file_name = 'result_classification.txt'
+        f = open(os.path.join(folder_path, file_name), 'a')
         f.write(setting + "  \n")
         f.write('accuracy:{}'.format(accuracy))
         f.write('\n')
