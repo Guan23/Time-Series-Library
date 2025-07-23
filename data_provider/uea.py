@@ -111,6 +111,7 @@ def interpolate_missing(y):
     """
     Replaces NaN values in pd.Series `y` using linear interpolation
     """
+    # TODO: 默认双端线性填充
     if y.isna().any():
         y = y.interpolate(method='linear', limit_direction='both')
     return y
@@ -120,6 +121,7 @@ def subsample(y, limit=256, factor=2):
     """
     If a given Series is longer than `limit`, returns subsampled sequence by the specified integer factor
     """
+    # TODO: 默认做法是步长为2然后重设index，后期可以把步长改为float
     if len(y) > limit:
         return y[::factor].reset_index(drop=True)
     return y
