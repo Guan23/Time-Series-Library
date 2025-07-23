@@ -668,7 +668,8 @@ class UEAloader(Dataset):
         self.feature_df = self.all_df
 
         # pre_process
-        normalizer = Normalizer()
+        # 这里只做了标准化，标准化的方式可选standard和minmax，并且有全局的和每个类别内部的可选
+        normalizer = Normalizer(norm_type='standardization')
         self.feature_df = normalizer.normalize(self.feature_df)
         print(len(self.all_IDs))
 
@@ -739,7 +740,9 @@ class UEAloader(Dataset):
         # 总之，最后建立了一个二维序列，形状是(num_samples * seq_len, feat_dim)，
         # 比如共有370个序列，每个序列的长度在7~29不等，每个序列有12维
         # 则num_samples=370，seq_len=7~29不等，feat_dim=12
-        # 在这一步得到的df中的values还只是原始数据，并没有做任何缺失值填充、异常值处理、统一序列长度、归一化等操作
+        # TODO: 在这一步得到的df中的values还只是原始数据，并没有做任何缺失值填充、异常值处理、统一序列长度、归一化等操作
+        #   后面会做缺失值填充、归一化、统一序列长度（在dataloader的collate_fn参数中做的），并没有做异常值处理
+        #   作者默认拿到的公开数据集是清洗过后的，无异常值的
         df = pd.concat((pd.DataFrame({col: df.loc[row, col] for col in df.columns}).reset_index(drop=True).set_index(
             pd.Series(lengths[row, 0] * [row])) for row in range(df.shape[0])), axis=0)
 
@@ -750,6 +753,9 @@ class UEAloader(Dataset):
         # 返回缺失值填充后的数据df，以及其对应的label，二者都是pd.DataFrame二维序列格式
         return df, labels_df
 
+    # 再在torch.Tensor数据格式上做一遍标准化，之前在numpy.ndarray数据格式上做过一遍归一化
+    # 若当时做的是均值标准差归一化，那这里就什么都不变
+    # 若当时做的是最小最大归一化，那这里还是会变的
     def instance_norm(self, case):
         if self.root_path.count('EthanolConcentration') > 0:  # special process for numerical stability
             mean = case.mean(0, keepdim=True)
@@ -763,6 +769,7 @@ class UEAloader(Dataset):
     def __getitem__(self, ind):
         batch_x = self.feature_df.loc[self.all_IDs[ind]].values
         labels = self.labels_df.loc[self.all_IDs[ind]].values
+        # 数据增强，augmentation_ratio是增强的比例（0~1）
         if self.flag == "TRAIN" and self.args.augmentation_ratio > 0:
             num_samples = len(self.all_IDs)
             num_columns = self.feature_df.shape[1]
@@ -772,10 +779,22 @@ class UEAloader(Dataset):
 
             batch_x = batch_x.reshape((1 * seq_len, num_columns))
 
-        return self.instance_norm(torch.from_numpy(batch_x)), \
-               torch.from_numpy(labels)
+        # 这里得到的data和label都是torch.Tensor格式的
+        # 拿JapaneseVowels的TEST测试集为例
+        # 第二个label没啥好说的，370个实例对应shape为(370,)的label
+        # 第一个data要说一下，在Dataset这一步并没有把所有实例序列进行统一化（统一到最长序列）
+        # 如果统一了，最长序列是29，共370个实例，则data的shape应该是(10730, 12)，其中10730 = 29 * 370
+        # 然而此处data的shape却是(5687, 12)，而5687 / 370 = 15.37，也就是9位测试者提供的实例时序长度平均为15.37
+        # 实例时序长度上的统一在后面的dataloader的collate_fn上，具体做法就是填充0
+        # 比如第1个数据时序长度只有19，最大长度为29，则往后填充10个0，并且随之生成一个二值mask
+        # mask为True代表真实值，False代表填充值，前19为True，后10为False
+
+        data = self.instance_norm(torch.from_numpy(batch_x))  # torch.float64
+        label = torch.from_numpy(labels)  # torch.int8
+        return data, label
 
     def __len__(self):
+        # len是实例数量（去重后），也就是370
         return len(self.all_IDs)
 
 
@@ -785,10 +804,14 @@ class Dataset_THDY(Dataset):
         super().__int__()
 
     def __len__(self):
-        pass
+        length = 0  # num_seq
+        return length
 
     def __getitem__(self, item):
-        pass
+        data = None  # shape=(num_seq*seq_len, num_features), dtype=torch.float64
+        label = None  # shape=(num_seq,), dtype=torch.int8
+
+        return data, label
 
 
 if __name__ == "__main__":
@@ -930,14 +953,14 @@ if __name__ == "__main__":
 
 
     args = argparser()
-    flag = None
+    flag = "TRAIN"
     data_set = UEAloader(
         args=args,
         root_path=args.root_path,
         flag=flag,
     )
 
-    data, label = data_set.__getitem__(1)
+    data, label = data_set.__getitem__(0)
 
     print(data.shape)
     print(label.shape)

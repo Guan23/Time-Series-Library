@@ -3,6 +3,8 @@ import torch.nn as nn
 import numpy as np
 from math import sqrt
 from utils.masking import TriangularCausalMask, ProbMask
+# TODO: 不想训练单纯看dataset和dataloader结构的话，在windows系统下屏蔽下面这个自注意力结构，
+#  这个reformer_pytorch只写了linux版的，没有windows版的
 from reformer_pytorch import LSHSelfAttention
 from einops import rearrange, repeat
 
